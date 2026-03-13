@@ -2,8 +2,9 @@ import cors from "cors";
 import express from "express";
 import { createStreamsRouter } from "./routes/streamsRoutes.js";
 import { AppError, isAppError } from "./errors.js";
+import { createPlatformAdapters } from "./services/platformAdapters.js";
 
-export function createApp({ streamsRepository }) {
+export function createApp({ streamsRepository, platformAdapters = createPlatformAdapters() }) {
   const app = express();
 
   app.use(cors());
@@ -13,7 +14,7 @@ export function createApp({ streamsRepository }) {
     res.json({ status: "ok" });
   });
 
-  app.use("/api/streams", createStreamsRouter(streamsRepository));
+  app.use("/api/streams", createStreamsRouter(streamsRepository, platformAdapters));
 
   app.use((req, _res, next) => {
     next(new AppError(404, `Route not found: ${req.method} ${req.originalUrl}`, "NOT_FOUND"));

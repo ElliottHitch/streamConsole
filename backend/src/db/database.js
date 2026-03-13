@@ -18,6 +18,7 @@ export function createDatabase(dbPath = defaultDatabasePath()) {
 
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
   ensureStreamsTable(db);
 
   return {

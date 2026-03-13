@@ -80,3 +80,10 @@ export async function deleteStream(id) {
     method: "DELETE"
   });
 }
+
+export async function syncStream(id) {
+  const payload = await request(`/api/streams/${id}/sync`, {
+    method: "POST"
+  });
+  return payload.data;
+}

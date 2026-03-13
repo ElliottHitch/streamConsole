@@ -2,7 +2,7 @@ import { Router } from "express";
 import { AppError } from "../errors.js";
 import { validateIdParam, validateStreamPayload } from "../validation/streamValidation.js";
 
-export function createStreamsRouter(streamsRepository) {
+export function createStreamsRouter(streamsRepository, platformAdapters) {
   const router = Router();
 
   router.get("/", (_req, res, next) => {
@@ -44,6 +44,59 @@ export function createStreamsRouter(streamsRepository) {
       }
 
       res.json({ data: updated });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:id/sync-status", (req, res, next) => {
+    try {
+      const id = validateIdParam(req.params.id);
+      const stream = streamsRepository.findById(id);
+
+      if (!stream) {
+        throw new AppError(404, "Stream not found.", "NOT_FOUND");
+      }
+
+      res.json({ data: streamsRepository.listSyncStates(id) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/:id/sync", async (req, res, next) => {
+    try {
+      const id = validateIdParam(req.params.id);
+      const stream = streamsRepository.findById(id);
+
+      if (!stream) {
+        throw new AppError(404, "Stream not found.", "NOT_FOUND");
+      }
+
+      for (const platform of stream.platforms) {
+        streamsRepository.updateSyncState(id, platform, {
+          externalId: null,
+          status: "pending",
+          lastError: null
+        });
+
+        try {
+          const result = await platformAdapters[platform].schedule(stream);
+          streamsRepository.updateSyncState(id, platform, {
+            externalId: result.externalId,
+            status: "synced",
+            lastError: null
+          });
+        } catch (error) {
+          streamsRepository.updateSyncState(id, platform, {
+            externalId: null,
+            status: "failed",
+            lastError: error instanceof Error ? error.message : "Unknown sync error."
+          });
+        }
+      }
+
+      res.json({ data: streamsRepository.listSyncStates(id) });
     } catch (error) {
       next(error);
     }

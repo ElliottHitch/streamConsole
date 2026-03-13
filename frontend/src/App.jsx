@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, createStream, deleteStream, listStreams, updateStream } from "./api";
+import { ApiError, createStream, deleteStream, listStreams, syncStream, updateStream } from "./api";
 
 const defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 const PLATFORM_OPTIONS = ["youtube", "facebook"];
@@ -100,6 +100,14 @@ function formatTimeLabel(value) {
   return `${normalizedHour}:${minuteText} ${suffix}`;
 }
 
+function getSyncState(stream, platform) {
+  return stream.syncStates?.find((item) => item.platform === platform) ?? null;
+}
+
+function formatStatusLabel(status) {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
 export default function App() {
   const [streams, setStreams] = useState([]);
   const [form, setForm] = useState(createInitialFormState);
@@ -108,6 +116,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [modeFlash, setModeFlash] = useState(false);
   const [highlightedStreamId, setHighlightedStreamId] = useState(null);
+  const [syncingStreamId, setSyncingStreamId] = useState(null);
   const modeFlashTimeoutRef = useRef(null);
 
   async function loadStreams(showLoadingState = false) {
@@ -240,6 +249,21 @@ export default function App() {
       await loadStreams();
     } catch (deleteError) {
       setError(formatApiError(deleteError));
+    }
+  }
+
+  async function handleSync(streamId) {
+    setError("");
+    setSyncingStreamId(streamId);
+
+    try {
+      await syncStream(streamId);
+      setHighlightedStreamId(streamId);
+      await loadStreams();
+    } catch (syncError) {
+      setError(formatApiError(syncError));
+    } finally {
+      setSyncingStreamId(null);
     }
   }
 
@@ -377,20 +401,45 @@ export default function App() {
               <div className="stream-card-copy">
                 <div className="stream-card-header">
                   <h3>{stream.title}</h3>
-                  <div className="platform-chip-row">
-                    {stream.platforms.map((platform) => (
-                      <span key={platform} className="platform-chip">
-                        {formatPlatformLabel(platform)}
-                      </span>
-                    ))}
-                  </div>
                 </div>
                 <p>{stream.description || "No description"}</p>
                 <p className="meta-line">
                   {new Date(stream.scheduledAt).toLocaleString()} ({stream.timezone})
                 </p>
+                <div className="platform-chip-row">
+                  {stream.platforms.map((platform) => {
+                    const syncState = getSyncState(stream, platform);
+                    return (
+                      <span
+                        key={platform}
+                        className={`platform-chip sync-chip status-${syncState?.status ?? "draft"}`}
+                      >
+                        {formatPlatformLabel(platform)} {formatStatusLabel(syncState?.status ?? "draft")}
+                      </span>
+                    );
+                  })}
+                </div>
+                {stream.syncStates?.some((item) => item.lastError) ? (
+                  <div className="sync-error-list">
+                    {stream.syncStates
+                      .filter((item) => item.lastError)
+                      .map((item) => (
+                        <p key={item.platform} className="sync-error-text">
+                          {formatPlatformLabel(item.platform)}: {item.lastError}
+                        </p>
+                      ))}
+                  </div>
+                ) : null}
               </div>
               <div className="row-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => handleSync(stream.id)}
+                  disabled={syncingStreamId === stream.id}
+                >
+                  {syncingStreamId === stream.id ? "Syncing..." : "Sync now"}
+                </button>
                 <button type="button" onClick={() => handleEdit(stream)}>
                   Edit
                 </button>
