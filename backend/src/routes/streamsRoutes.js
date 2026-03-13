@@ -76,6 +76,7 @@ export function createStreamsRouter(streamsRepository, platformAdapters) {
       for (const platform of stream.platforms) {
         streamsRepository.updateSyncState(id, platform, {
           externalId: null,
+          externalStreamId: null,
           status: "pending",
           lastError: null
         });
@@ -84,12 +85,14 @@ export function createStreamsRouter(streamsRepository, platformAdapters) {
           const result = await platformAdapters[platform].schedule(stream);
           streamsRepository.updateSyncState(id, platform, {
             externalId: result.externalId,
+            externalStreamId: result.externalStreamId ?? null,
             status: "synced",
             lastError: null
           });
         } catch (error) {
           streamsRepository.updateSyncState(id, platform, {
             externalId: null,
+            externalStreamId: null,
             status: "failed",
             lastError: error instanceof Error ? error.message : "Unknown sync error."
           });

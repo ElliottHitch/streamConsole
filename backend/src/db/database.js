@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
+import { createIntegrationsRepository, ensureIntegrationsTable } from "./integrationsRepository.js";
 import { createStreamsRepository, ensureStreamsTable } from "./streamsRepository.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -20,9 +21,11 @@ export function createDatabase(dbPath = defaultDatabasePath()) {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   ensureStreamsTable(db);
+  ensureIntegrationsTable(db);
 
   return {
     db,
-    streamsRepository: createStreamsRepository(db)
+    streamsRepository: createStreamsRepository(db),
+    integrationsRepository: createIntegrationsRepository(db)
   };
 }

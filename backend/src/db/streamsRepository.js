@@ -31,10 +31,20 @@ function mapSyncRow(row) {
     streamId: row.stream_id,
     platform: row.platform,
     externalId: row.external_id,
+    externalStreamId: row.external_stream_id,
     status: row.status,
     lastError: row.last_error,
     updatedAt: row.updated_at
   };
+}
+
+function ensureColumn(db, tableName, columnName, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
 }
 
 export function ensureStreamsTable(db) {
@@ -54,6 +64,7 @@ export function ensureStreamsTable(db) {
       stream_id INTEGER NOT NULL,
       platform TEXT NOT NULL,
       external_id TEXT,
+      external_stream_id TEXT,
       status TEXT NOT NULL,
       last_error TEXT,
       updated_at TEXT NOT NULL,
@@ -61,12 +72,14 @@ export function ensureStreamsTable(db) {
       FOREIGN KEY (stream_id) REFERENCES streams(id) ON DELETE CASCADE
     );
   `);
+
+  ensureColumn(db, "stream_platform_sync", "external_stream_id", "TEXT");
 }
 
 export function createStreamsRepository(db) {
   const listSyncStatesStatement = db.prepare(
     `
-    SELECT stream_id, platform, external_id, status, last_error, updated_at
+    SELECT stream_id, platform, external_id, external_stream_id, status, last_error, updated_at
     FROM stream_platform_sync
     WHERE stream_id = ?
     ORDER BY platform ASC
@@ -74,8 +87,16 @@ export function createStreamsRepository(db) {
   );
   const insertSyncStateStatement = db.prepare(
     `
-    INSERT OR IGNORE INTO stream_platform_sync (stream_id, platform, external_id, status, last_error, updated_at)
-    VALUES (?, ?, NULL, 'draft', NULL, ?)
+    INSERT OR IGNORE INTO stream_platform_sync (
+      stream_id,
+      platform,
+      external_id,
+      external_stream_id,
+      status,
+      last_error,
+      updated_at
+    )
+    VALUES (?, ?, NULL, NULL, 'draft', NULL, ?)
   `
   );
   const deleteRemovedSyncStatesStatement = db.prepare(
@@ -85,7 +106,7 @@ export function createStreamsRepository(db) {
   const updateSyncStateStatement = db.prepare(
     `
     UPDATE stream_platform_sync
-    SET external_id = ?, status = ?, last_error = ?, updated_at = ?
+    SET external_id = ?, external_stream_id = ?, status = ?, last_error = ?, updated_at = ?
     WHERE stream_id = ? AND platform = ?
   `
   );
@@ -216,6 +237,7 @@ export function createStreamsRepository(db) {
     updateSyncState(streamId, platform, values) {
       updateSyncStateStatement.run(
         values.externalId ?? null,
+        values.externalStreamId ?? null,
         values.status,
         values.lastError ?? null,
         new Date().toISOString(),

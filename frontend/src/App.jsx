@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, createStream, deleteStream, listStreams, syncStream, updateStream } from "./api";
+import {
+  ApiError,
+  createStream,
+  deleteStream,
+  getYouTubeConnectUrl,
+  getYouTubeIntegrationStatus,
+  listStreams,
+  syncStream,
+  updateStream
+} from "./api";
 
 const defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 const PLATFORM_OPTIONS = ["youtube", "facebook"];
@@ -110,14 +119,23 @@ function formatStatusLabel(status) {
 
 export default function App() {
   const [streams, setStreams] = useState([]);
+  const [youtubeStatus, setYouTubeStatus] = useState({
+    platform: "youtube",
+    configured: false,
+    connected: false,
+    accountLabel: null,
+    channelId: null
+  });
   const [form, setForm] = useState(createInitialFormState);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
+  const [integrationError, setIntegrationError] = useState("");
   const [loading, setLoading] = useState(false);
   const [modeFlash, setModeFlash] = useState(false);
   const [highlightedStreamId, setHighlightedStreamId] = useState(null);
   const [syncingStreamId, setSyncingStreamId] = useState(null);
   const modeFlashTimeoutRef = useRef(null);
+  const youtubeConnectUrl = useMemo(() => getYouTubeConnectUrl(), []);
 
   async function loadStreams(showLoadingState = false) {
     if (showLoadingState) {
@@ -137,8 +155,29 @@ export default function App() {
     }
   }
 
+  async function loadYouTubeStatus() {
+    setIntegrationError("");
+
+    try {
+      const status = await getYouTubeIntegrationStatus();
+      setYouTubeStatus(status);
+    } catch (loadError) {
+      setIntegrationError(formatApiError(loadError));
+    }
+  }
+
   useEffect(() => {
     loadStreams(true);
+    loadYouTubeStatus();
+  }, []);
+
+  useEffect(() => {
+    function handleWindowFocus() {
+      loadYouTubeStatus();
+    }
+
+    window.addEventListener("focus", handleWindowFocus);
+    return () => window.removeEventListener("focus", handleWindowFocus);
   }, []);
 
   useEffect(() => {
@@ -287,6 +326,41 @@ export default function App() {
           {error}
         </div>
       ) : null}
+
+      <section className="panel integrations-panel">
+        <div className="section-heading">
+          <h2>Integrations</h2>
+          <p>YouTube</p>
+        </div>
+        <div className="integration-card">
+          <div className="stream-card-copy">
+            <h3>YouTube</h3>
+            <p className="integration-status-text">
+              {youtubeStatus.connected
+                ? `Connected${youtubeStatus.accountLabel ? ` as ${youtubeStatus.accountLabel}` : "."}`
+                : youtubeStatus.configured
+                  ? "Not connected."
+                  : "Google OAuth is not configured on the server."}
+            </p>
+            {youtubeStatus.channelId ? <p className="meta-line">Channel ID: {youtubeStatus.channelId}</p> : null}
+            {integrationError ? (
+              <p className="sync-error-text" role="alert">
+                {integrationError}
+              </p>
+            ) : null}
+          </div>
+          <div className="row-actions">
+            {!youtubeStatus.connected ? (
+              <a className="button-link" href={youtubeConnectUrl} target="_blank" rel="noreferrer">
+                Connect YouTube
+              </a>
+            ) : null}
+            <button type="button" className="secondary-button" onClick={loadYouTubeStatus}>
+              Refresh
+            </button>
+          </div>
+        </div>
+      </section>
 
       <section className="content-grid">
         <section className={`panel form-panel${editingId ? " is-editing" : " is-creating"}${modeFlash ? " is-transitioning" : ""}`}>

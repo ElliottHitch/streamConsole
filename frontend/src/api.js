@@ -87,3 +87,12 @@ export async function syncStream(id) {
   });
   return payload.data;
 }
+
+export async function getYouTubeIntegrationStatus() {
+  const payload = await request("/api/integrations/youtube/status");
+  return payload.data;
+}
+
+export function getYouTubeConnectUrl() {
+  return `${API_BASE_URL}/api/integrations/youtube/connect`;
+}

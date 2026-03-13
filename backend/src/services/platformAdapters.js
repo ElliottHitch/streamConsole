@@ -1,14 +1,14 @@
 export const SUPPORTED_PLATFORMS = ["youtube", "facebook"];
 
-export function createPlatformAdapters() {
+export function createPlatformAdapters({ youtubeIntegrationService } = {}) {
   return {
     youtube: {
       async schedule(stream) {
-        if (stream.title.includes("[fail-youtube]")) {
-          throw new Error("YouTube sync failed in stub adapter.");
+        if (!youtubeIntegrationService) {
+          throw new Error("YouTube integration service is not configured.");
         }
 
-        return { externalId: `yt_${stream.id}` };
+        return youtubeIntegrationService.scheduleStream(stream);
       }
     },
     facebook: {

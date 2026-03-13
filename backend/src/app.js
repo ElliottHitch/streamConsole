@@ -1,10 +1,17 @@
 import cors from "cors";
 import express from "express";
+import { createIntegrationsRouter } from "./routes/integrationsRoutes.js";
 import { createStreamsRouter } from "./routes/streamsRoutes.js";
 import { AppError, isAppError } from "./errors.js";
 import { createPlatformAdapters } from "./services/platformAdapters.js";
+import { createYouTubeIntegrationService } from "./services/youtubeIntegrationService.js";
 
-export function createApp({ streamsRepository, platformAdapters = createPlatformAdapters() }) {
+export function createApp({
+  streamsRepository,
+  integrationsRepository,
+  youtubeIntegrationService = createYouTubeIntegrationService({ integrationsRepository }),
+  platformAdapters = createPlatformAdapters({ youtubeIntegrationService })
+}) {
   const app = express();
 
   app.use(cors());
@@ -14,6 +21,7 @@ export function createApp({ streamsRepository, platformAdapters = createPlatform
     res.json({ status: "ok" });
   });
 
+  app.use("/api/integrations", createIntegrationsRouter(youtubeIntegrationService));
   app.use("/api/streams", createStreamsRouter(streamsRepository, platformAdapters));
 
   app.use((req, _res, next) => {

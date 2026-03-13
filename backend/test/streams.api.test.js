@@ -2,7 +2,9 @@ import Database from "better-sqlite3";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { createIntegrationsRepository, ensureIntegrationsTable } from "../src/db/integrationsRepository.js";
 import { createStreamsRepository, ensureStreamsTable } from "../src/db/streamsRepository.js";
+import { createYouTubeIntegrationService } from "../src/services/youtubeIntegrationService.js";
 
 const validPayload = {
   title: "Launch Stream",
@@ -12,15 +14,59 @@ const validPayload = {
   platforms: ["youtube", "facebook"]
 };
 
+const configuredEnv = {
+  GOOGLE_CLIENT_ID: "test-client-id",
+  GOOGLE_CLIENT_SECRET: "test-client-secret",
+  GOOGLE_REDIRECT_URI: "http://localhost:4000/api/integrations/youtube/callback"
+};
+
+function createStubPlatformAdapters() {
+  return {
+    youtube: {
+      async schedule(stream) {
+        if (stream.title.includes("[fail-youtube]")) {
+          throw new Error("YouTube sync failed in stub adapter.");
+        }
+
+        return { externalId: `yt_${stream.id}` };
+      }
+    },
+    facebook: {
+      async schedule(stream) {
+        if (stream.title.includes("[fail-facebook]")) {
+          throw new Error("Facebook sync failed in stub adapter.");
+        }
+
+        return { externalId: `fb_${stream.id}` };
+      }
+    }
+  };
+}
+
 describe("streams API", () => {
   let db;
   let app;
+  let integrationsRepository;
+  let streamsRepository;
+  let youtubeIntegrationService;
 
   beforeEach(() => {
     db = new Database(":memory:");
     db.pragma("foreign_keys = ON");
     ensureStreamsTable(db);
-    app = createApp({ streamsRepository: createStreamsRepository(db) });
+    ensureIntegrationsTable(db);
+    streamsRepository = createStreamsRepository(db);
+    integrationsRepository = createIntegrationsRepository(db);
+    youtubeIntegrationService = createYouTubeIntegrationService({
+      integrationsRepository,
+      env: configuredEnv
+    });
+    app = createApp({
+      streamsRepository,
+      integrationsRepository,
+      youtubeIntegrationService,
+      platformAdapters: createStubPlatformAdapters()
+    });
   });
 
   afterEach(() => {
@@ -221,5 +267,69 @@ describe("streams API", () => {
       externalId: `fb_${id}`,
       lastError: null
     });
+  });
+
+  it("fails youtube sync cleanly when youtube is not connected", async () => {
+    app = createApp({
+      streamsRepository,
+      integrationsRepository,
+      youtubeIntegrationService
+    });
+
+    const created = await request(app).post("/api/streams").send({
+      ...validPayload,
+      platforms: ["youtube"]
+    });
+    const id = created.body.data.id;
+
+    const syncResponse = await request(app).post(`/api/streams/${id}/sync`).send();
+
+    expect(syncResponse.status).toBe(200);
+    expect(syncResponse.body.data).toEqual([
+      expect.objectContaining({
+        platform: "youtube",
+        status: "failed",
+        externalId: null,
+        externalStreamId: null,
+        lastError: "YouTube is not connected. Connect YouTube before syncing."
+      })
+    ]);
+  });
+
+  it("returns youtube oauth status without exposing tokens", async () => {
+    let response = await request(app).get("/api/integrations/youtube/status");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({
+      platform: "youtube",
+      configured: true,
+      connected: false,
+      accountLabel: null,
+      channelId: null
+    });
+
+    integrationsRepository.saveYouTubeConnection({
+      accountLabel: "Main Channel",
+      channelId: "UC123",
+      accessToken: "secret-access-token",
+      refreshToken: "secret-refresh-token",
+      expiryDate: "2026-05-01T00:00:00.000Z",
+      scope: "https://www.googleapis.com/auth/youtube"
+    });
+
+    response = await request(app).get("/api/integrations/youtube/status");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({
+      platform: "youtube",
+      configured: true,
+      connected: true,
+      accountLabel: "Main Channel",
+      channelId: "UC123",
+      scope: "https://www.googleapis.com/auth/youtube",
+      expiryDate: "2026-05-01T00:00:00.000Z"
+    });
+    expect(response.body.data.accessToken).toBeUndefined();
+    expect(response.body.data.refreshToken).toBeUndefined();
   });
 });

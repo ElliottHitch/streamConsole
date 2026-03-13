@@ -5,8 +5,8 @@ const host = process.env.HOST ?? "0.0.0.0";
 const port = Number.parseInt(process.env.PORT ?? "4000", 10);
 const dbPath = process.env.DB_PATH;
 
-const { db, streamsRepository } = createDatabase(dbPath);
-const app = createApp({ streamsRepository });
+const { db, streamsRepository, integrationsRepository } = createDatabase(dbPath);
+const app = createApp({ streamsRepository, integrationsRepository });
 
 const server = app.listen(port, host, () => {
   console.log(`streamConsole backend listening on http://${host}:${port}`);
